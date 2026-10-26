@@ -2,6 +2,7 @@ name: Build IPA (tanpa tanda tangan)
 
 on:
   workflow_dispatch:
+  push:
 
 jobs:
   build:
