@@ -1,0 +1,65 @@
+name: Build IPA (tanpa tanda tangan)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Siapkan folder ios (tidak menimpa file Anda)
+        run: flutter create . --platforms=ios --org com.dompetku
+
+      - name: Atur izin kamera/galeri, akses http, dan versi iOS minimum
+        run: |
+          python3 - <<'PY'
+          import re, os
+          p = 'ios/Runner/Info.plist'
+          s = open(p, encoding='utf-8').read()
+          add = ''
+          if 'NSCameraUsageDescription' not in s:
+              add += '\t<key>NSCameraUsageDescription</key>\n\t<string>Untuk memotret struk pembayaran</string>\n'
+          if 'NSPhotoLibraryUsageDescription' not in s:
+              add += '\t<key>NSPhotoLibraryUsageDescription</key>\n\t<string>Untuk mengimpor gambar struk</string>\n'
+          if 'NSAppTransportSecurity' not in s:
+              add += '\t<key>NSAppTransportSecurity</key>\n\t<dict>\n\t\t<key>NSAllowsArbitraryLoads</key>\n\t\t<true/>\n\t</dict>\n'
+          i = s.rfind('</dict>')
+          s = s[:i] + add + s[i:]
+          s = re.sub(r'(<key>CFBundleDisplayName</key>\s*<string>)[^<]*', r'\1DompetKu', s, count=1)
+          open(p, 'w', encoding='utf-8').write(s)
+
+          pb = 'ios/Runner.xcodeproj/project.pbxproj'
+          t = open(pb, encoding='utf-8').read()
+          t = re.sub(r'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;', 'IPHONEOS_DEPLOYMENT_TARGET = 15.5;', t)
+          open(pb, 'w', encoding='utf-8').write(t)
+
+          pf = 'ios/Podfile'
+          if os.path.exists(pf):
+              u = open(pf, encoding='utf-8').read()
+              if re.search(r"platform :ios, '[0-9.]+'", u):
+                  u = re.sub(r"#?\s*platform :ios, '[0-9.]+'", "platform :ios, '15.5'", u, count=1)
+              else:
+                  u = "platform :ios, '15.5'\n" + u
+              open(pf, 'w', encoding='utf-8').write(u)
+          PY
+
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+
+      - name: Bungkus menjadi .ipa
+        run: |
+          mkdir Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/Runner.app
+          zip -qry dompetku.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dompetku-ipa
+          path: dompetku.ipa
